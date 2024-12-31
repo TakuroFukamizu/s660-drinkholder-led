@@ -3,16 +3,29 @@
  * 
  * @Hardwares: M5NanoC6
  * @Platform Version: Arduino ESP32 Board Manager v2.1.3
+ * @Libraries: M5Unified, EspEasyUtils, ESP32-BLE_MIDI
  */
 
 #include <M5Unified.h>
 #include <EspEasyLED.h>
 #include <EspEasyGPIOInterrupt.h>
 #include <EspEasyTask.h>
+// #include <BLEMidi.h>
 
-#define MODE_NUM 2
-#define MODE1_COLOR_NUM 6
+// NOTE: BLE MIDI is not working now at ESP32-C6
+// https://github.com/h2zero/NimBLE-Arduino/issues/642
+
 #define TASK_PRIORITY_PERFORM 20
+
+#define MODE_NUM 3
+#define MODE1_COLOR_NUM 6
+
+#define BLE_DEVICE_NAME "S660-DRINKHOLDER-LED"
+#define MIDI_CC_COLOR_R 1 // CC1 Set Red valuse(0-255)
+#define MIDI_CC_COLOR_G 2 // CC2 Set Green valuse(0-255)
+#define MIDI_CC_COLOR_B 3 // CC3 Set Blue valuse(0-255)
+#define MIDI_MAX_BRIGHTNESS 255
+#define MIDI_MAX_VALUE 127
 
 //-------------------------------
 
@@ -36,14 +49,25 @@ bool state = false;
 uint8_t mode = 0;
 uint8_t mode1color = 0;
 
+bool midiLedOn = false;
+uint8_t midiBrightness = MIDI_MAX_BRIGHTNESS;
+EspEasyLED::color_t midiColor = EspEasyLEDColor::WHITE;
+
 //-------------------------------
 
 void startPeformance();
 void stopPerformance();
 
-void performanceTask1();
-void performanceTask2();
+void ledBasicTask();
+void ledParipiTask();
+void ledBleMidiTask();
 void onMagSwChanged();
+
+void onBleConnected();
+void onBleDisconnected();
+void onNoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t timestamp);
+void onNoteOff(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t timestamp);
+void onControlChange(uint8_t channel, uint8_t controller, uint8_t value, uint16_t timestamp);
 
 //-------------------------------
 
@@ -53,8 +77,15 @@ void setup() {
   pinMode(GPIO_NUM_19, OUTPUT); // Bult-in RGB LED PWR
   pinMode(GPIO_NUM_7, OUTPUT); // BLUE LED
 
-  // performanceTask.begin(performanceTask, 2, APP_CPU_NUM);
   magSwInterrupt.begin(onMagSwChanged, GPIO_NUM_2, CHANGE);
+
+  // // Setup BLE MIDI
+  // BLEMidiServer.begin(BLE_DEVICE_NAME);
+  // BLEMidiServer.setOnConnectCallback(onBleConnected);
+  // BLEMidiServer.setOnDisconnectCallback(onBleDisconnected);
+  // BLEMidiServer.setNoteOnCallback(onNoteOn);
+  // BLEMidiServer.setNoteOffCallback(onNoteOff);
+  // BLEMidiServer.setControlChangeCallback(onControlChange);
 
   // All off
   digitalWrite(GPIO_NUM_19, LOW); // LED off
@@ -104,10 +135,13 @@ void startPeformance() {
   statusLed.showColor(EspEasyLEDColor::GREEN);
   switch (mode) {
     case 0: 
-      performanceTask.begin(performanceTask1, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
+      performanceTask.begin(ledBasicTask, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
       break;
     case 1: 
-      performanceTask.begin(performanceTask2, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
+      performanceTask.begin(ledParipiTask, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
+      break;
+    case 2: 
+      performanceTask.begin(ledBleMidiTask, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
       break;
   }
 }
@@ -128,8 +162,8 @@ void onMagSwChanged() {
   }
 }
 
-/** LED mode : paripi */
-void performanceTask1() {
+/** LED mode : basic */
+void ledBasicTask() {
   perfomanceLed.setColor(0, mode1colors[mode1color]);
   while(1){
     for(uint8_t i=0; i<100; i++) {
@@ -146,7 +180,7 @@ void performanceTask1() {
 }
 
 /** LED mode : paripi */
-void performanceTask2() {
+void ledParipiTask() {
   uint8_t brightness = 10;
   while(1){
     uint8_t r = random(256);
@@ -161,3 +195,55 @@ void performanceTask2() {
   }
 }
 
+/** LED mode : BLE MIDI */
+void ledBleMidiTask() {
+  while(1){
+    if (midiLedOn) {
+      perfomanceLed.setColor(0, midiColor);
+      perfomanceLed.setBrightness(midiBrightness);
+      perfomanceLed.show();
+    } else {
+      perfomanceLed.clear();
+    }
+    delay(100);
+  }
+}
+
+//-------------------------------
+
+// void onBleConnected() {
+//   midiLedOn = false;
+//   midiBrightness = MIDI_MAX_BRIGHTNESS;
+//   midiColor = EspEasyLEDColor::WHITE;
+// }
+
+// void onBleDisconnected() {
+//   midiLedOn = false;
+//   perfomanceLed.clear();
+// }
+
+// void onNoteOn(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t timestamp) {
+//   midiBrightness = (uint8_t)((float)velocity * (float)MIDI_MAX_BRIGHTNESS / (float)MIDI_MAX_VALUE);
+//   latestNoteOnTimestamp = timestamp;
+//   midiLedOn = true;
+// }
+
+// void onNoteOff(uint8_t channel, uint8_t note, uint8_t velocity, uint16_t timestamp)
+// {
+//   midiLedOn = false;
+// }
+
+// void onControlChange(uint8_t channel, uint8_t controller, uint8_t value, uint16_t timestamp)
+// {
+//   switch (controller) {
+//     case MIDI_CC_COLOR_R:
+//       midiColor = { value, midiColor.G, midiColor.B };
+//       break;
+//     case MIDI_CC_COLOR_G:
+//       midiColor = { midiColor.R, value, midiColor.B };
+//       break;
+//     case MIDI_CC_COLOR_B:
+//       midiColor = { midiColor.R, midiColor.G, value };
+//       break;
+//   }
+// }
