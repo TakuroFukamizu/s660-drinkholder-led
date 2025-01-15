@@ -80,6 +80,9 @@ void onControlChange(uint8_t channel, uint8_t controller, uint8_t value, uint16_
 
 void setup() {
   M5.begin();
+  M5.Log.setLogLevel(m5::log_target_serial, ESP_LOG_VERBOSE);
+  // M5.Log.setEnableColor(m5::log_target_serial, true);
+
   pinMode(GPIO_NUM_2, INPUT_PULLUP); // GROVE - Magnet SW
   pinMode(GPIO_NUM_19, OUTPUT); // Bult-in RGB LED PWR
   pinMode(GPIO_NUM_7, OUTPUT); // BLUE LED
@@ -115,6 +118,8 @@ void setup() {
 
   // first run
   onMagSwChanged();
+
+  M5.Log(ESP_LOG_INFO, "init complete");
 }
 
 void loop() {
@@ -127,6 +132,7 @@ void loop() {
     if (MODE_NUM <= mode) {
       mode = 0;
     }
+    M5.Log(ESP_LOG_INFO, "change mode");
     stopPerformance();
     startPeformance();
 
@@ -142,6 +148,7 @@ void loop() {
     if (MODE1_COLOR_NUM <= mode1color) {
       mode1color = 0;
     }
+    M5.Log(ESP_LOG_INFO, "change mode1 color");
 
     // save config
     preferences.begin(PREF_NS, false); // read-write mode
@@ -153,33 +160,40 @@ void loop() {
 }
 
 void startPeformance() {
+  M5.Log(ESP_LOG_INFO, "startPeformance");
   digitalWrite(GPIO_NUM_19, HIGH); // LED on
   statusLed.showColor(EspEasyLEDColor::GREEN);
   switch (mode) {
     case 0: 
+      M5.Log(ESP_LOG_DEBUG, "start basic performance task");
       performanceTask.begin(ledBasicTask, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
       break;
     case 1: 
+      M5.Log(ESP_LOG_DEBUG, "start paripi performance task");
       performanceTask.begin(ledParipiTask, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
       break;
     case 2: 
+      M5.Log(ESP_LOG_DEBUG, "start BLE-MIDI performance task");
       performanceTask.begin(ledBleMidiTask, TASK_PRIORITY_PERFORM, ESP_EASY_TASK_CPU_NUM);
       break;
   }
 }
 
 void stopPerformance() {
+    M5.Log(ESP_LOG_INFO, "stopPerformance");
     digitalWrite(GPIO_NUM_19, LOW); // LED off
-    performanceTask.resume(); // stop LED
-    perfomanceLed.clear();
+    performanceTask.suspend(); // stop LED Task
+    perfomanceLed.clear(); // trun off LED
 }
 
 void onMagSwChanged() {
   // set state by Magnet Button or Manual button
   state = digitalRead(GPIO_NUM_2) == HIGH; // LOW: on(close), HIGH: off(away)
   if (state) {
+    M5.Log(ESP_LOG_INFO, "onMagSwChanged => away");
     startPeformance();
   } else {
+    M5.Log(ESP_LOG_INFO, "onMagSwChanged => close");
     stopPerformance();
   }
 }
