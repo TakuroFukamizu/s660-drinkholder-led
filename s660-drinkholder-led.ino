@@ -11,9 +11,14 @@
 #include <EspEasyGPIOInterrupt.h>
 #include <EspEasyTask.h>
 // #include <BLEMidi.h>
+#include <Preferences.h>
 
 // NOTE: BLE MIDI is not working now at ESP32-C6
 // https://github.com/h2zero/NimBLE-Arduino/issues/642
+
+#define PREF_NS "mode_cfg"
+#define PREF_MODE "i_mode"
+#define PREF_MODE1_COLOR "i_mode1_color"
 
 #define TASK_PRIORITY_PERFORM 20
 
@@ -53,6 +58,8 @@ bool midiLedOn = false;
 uint8_t midiBrightness = MIDI_MAX_BRIGHTNESS;
 EspEasyLED::color_t midiColor = EspEasyLEDColor::WHITE;
 
+Preferences preferences;
+
 //-------------------------------
 
 void startPeformance();
@@ -76,6 +83,15 @@ void setup() {
   pinMode(GPIO_NUM_2, INPUT_PULLUP); // GROVE - Magnet SW
   pinMode(GPIO_NUM_19, OUTPUT); // Bult-in RGB LED PWR
   pinMode(GPIO_NUM_7, OUTPUT); // BLUE LED
+
+  preferences.begin(PREF_NS, true); // read-only mode
+  if(preferences.isKey(PREF_MODE)) {
+    mode = preferences.getUChar(PREF_MODE);
+  }
+  if(preferences.isKey(PREF_MODE1_COLOR)) {
+    mode1color = preferences.getUChar(PREF_MODE1_COLOR);
+  }
+  preferences.end();
 
   magSwInterrupt.begin(onMagSwChanged, GPIO_NUM_2, CHANGE);
 
@@ -113,18 +129,24 @@ void loop() {
     }
     stopPerformance();
     startPeformance();
+
+    // save config
+    preferences.begin(PREF_NS, false); // read-write mode
+    preferences.putUChar(PREF_MODE, mode);
+    preferences.end();
   }
 
   // MODE1 Change color
-  if (M5.BtnA.wasDoubleClicked()) {
+  if (M5.BtnA.wasDoubleClicked() && mode == 0) {
     mode1color++;
-    if (MODE1_COLOR_NUM <= mode) {
-      mode = 0;
+    if (MODE1_COLOR_NUM <= mode1color) {
+      mode1color = 0;
     }
-    if (mode == 0) {
-      stopPerformance();
-      startPeformance();
-    }
+
+    // save config
+    preferences.begin(PREF_NS, false); // read-write mode
+    preferences.putUChar(PREF_MODE1_COLOR, mode1color);
+    preferences.end();
   }
 
   // if (M5.BtnA.wasSingleClicked()) state = !state;
@@ -154,7 +176,7 @@ void stopPerformance() {
 
 void onMagSwChanged() {
   // set state by Magnet Button or Manual button
-  state = digitalRead(GPIO_NUM_2) == LOW;
+  state = digitalRead(GPIO_NUM_2) == HIGH; // LOW: on(close), HIGH: off(away)
   if (state) {
     startPeformance();
   } else {
@@ -164,14 +186,15 @@ void onMagSwChanged() {
 
 /** LED mode : basic */
 void ledBasicTask() {
-  perfomanceLed.setColor(0, mode1colors[mode1color]);
   while(1){
     for(uint8_t i=0; i<100; i++) {
+      perfomanceLed.setColor(0, mode1colors[mode1color]); // set color realtime
       perfomanceLed.setBrightness(i);
       perfomanceLed.show();
       delay(50);
     }
     for(uint8_t i=100; i>0; i--) {
+      perfomanceLed.setColor(0, mode1colors[mode1color]);
       perfomanceLed.setBrightness(i);
       perfomanceLed.show();
       delay(50);
@@ -181,17 +204,15 @@ void ledBasicTask() {
 
 /** LED mode : paripi */
 void ledParipiTask() {
-  uint8_t brightness = 10;
   while(1){
     uint8_t r = random(256);
     uint8_t g = random(256);
     uint8_t b = random(256);
+    uint8_t brightness = random(90)+10;
     perfomanceLed.setColor(0, r, g, b);
     perfomanceLed.setBrightness(brightness);
     perfomanceLed.show();
-    delay(500);
-    brightness++;
-    if (100 < brightness) brightness = 10;
+    delay(200);
   }
 }
 
